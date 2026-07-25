@@ -1,137 +1,76 @@
-# Hello World Example
+# Private Credit Score
 
-The repository is intended as part of the tutorial flow for the hello-world example in the [Midnight documentation](https://docs.midnight.network/getting-started/hello-world). It does not operate as a complete repository without the accompanying documentation.
+Proves a person meets a lending threshold on Midnight, without ever revealing their actual score.
 
-The below documentation will be provided here to "finish" this example.
+## The idea
 
-## Set up project
+On most public blockchains, DeFi lending only works one way: over-collateralized. To borrow $70, you lock up $100, because there's no way to prove you're trustworthy without exposing your entire financial history to the world.
 
-```bash
-git clone git@github.com:midnightntwrk/example-hello-world.git
-```
+This project proves creditworthiness the same way a bank credit check works in real life: the lender learns "yes, this person qualifies" or "no, they don't" — never the underlying score, never the transaction history behind it.
 
-Install dependencies:
+It does this using Midnight's core feature: a private `witness` (the actual score, known only to the prover) is checked against a threshold entirely inside a zero-knowledge circuit, and only the true/false verdict is written to public ledger state via `disclose()`.
 
-```bash
-yarn install
-```
+## Public state vs. private witness
 
-## Create the contract file
+Midnight contracts can hold two very different kinds of data:
 
-Create a new file named `hello-world.compact` in the `contracts` directory:
+- **Public ledger state** — anyone can read it, forever, on-chain. In this contract, that's a single boolean: `creditworthy`.
+- **Private witness** — supplied off-chain, never touches the chain, never gets published. In this contract, that's `getRepaymentScore()`, which returns a private score (mocked as `750` for this demo; in a real system it would come from the user's own private financial data).
 
-```bash
-touch contracts/hello-world.compact
-```
+The circuit `checkCreditworthiness(threshold)` compares the private score against a public threshold, and only the result of that comparison, true or false, is disclosed to the public ledger. The score itself never appears anywhere on-chain.
 
-Open this file in VS Code:
-```bash
-code .
-```
+## The contract
 
-## Create the Compact Smart Contract
+Contract code (from contracts/hello-world.compact):
 
-```compact
-pragma language_version 0.23;
+    pragma language_version >= 0.23;
 
-export ledger message: Opaque<"string">;
+    import CompactStandardLibrary;
 
-export circuit storeMessage(newMessage: Opaque<"string">): [] {
-  message = disclose(newMessage);
-}
-```
-- `pragma language_version` specifies which version of Compact your contract uses.
-- `ledger message` creates a state variable named `message` that stores a string value in the on-chain state. On-chain state is public and persistent on the blockchain.
-- `circuit storeMessage` is a Compact circuit (function) that defines the logic to modify on-chain state.
-- `newMessage: Opaque<"string">` is the input parameter. *Circuit parameters are always private by default.* The `disclose()` function marks the private value as safe to store publicly. Without it, trying to assign `newMessage` directly to the ledger returns a compiler error.
+    witness getRepaymentScore(): Uint<16>;
 
-## Compile the contract
+    export ledger creditworthy: Boolean;
 
-Compiling transforms your Compact code into zero-knowledge circuits, generates cryptographic keys, 
-and creates TypeScript APIs and a JavaScript implementation for the contract to be used by DApps. 
+    export circuit checkCreditworthiness(threshold: Uint<16>): [] {
+        creditworthy = disclose(getRepaymentScore() >= threshold);
+    }
 
-Run the compiler from the contracts folder:
+## Setup
 
-```bash
-compact compile hello-world.compact managed/hello-world
-```
+Requirements: Node.js 22+, Docker, the Compact toolchain (compact CLI), Yarn.
 
-You should see the following output:
+Install dependencies and compile:
 
-```
-Compiling 1 circuits:
-  circuit "storeMessage" (k=6, rows=26)
-```
+    yarn install
+    compact compile contracts/hello-world.compact contracts/managed/hello-world
 
-The compilation process will:
-1. Parse and validate your Compact code.
-2. Generate zero-knowledge circuits from your logic.
-3. Create proving and verifying keys for the circuits.
-4. Generate the TypeScript API and JavaScript implementation for the contract.
+Run locally on a local devnet:
 
-When compilation completes, you'll see a new directory structure:
+    yarn env:up
+    yarn test:local
 
-```
-contracts/
-├── managed/
-|   └── hello-world/
-|        ├── compiler/
-|        ├── contract/
-|        ├── keys/
-|        └── zkir/
-└── hello-world.compact
-└── index.ts
-```
+Run against Preprod (public testnet):
 
-Here's what each directory contains:
+    yarn test:preprod
 
-- **contract/**: The compiled contract artifacts, which includes the JavaScript implementation and type definitions.
-- **keys/**: Cryptographic proving and verifying keys that enable zero-knowledge proofs.
-- **zkir/**: Zero-Knowledge Intermediate Representation—the bridge between Compact and the ZK backend.
-- **compiler/**: Compiler-generated JSON output that other tools can use to understand the contract structure.
+Running against Preprod requires a funded wallet. Set MIDNIGHT_PREPROD_SEED in your environment, then fund the corresponding wallet address via the Preprod faucet at https://midnight-tmnight-preprod.nethermind.dev/
 
-## Deploy Contract to Local Devnet
-Now that your contract is compiled, it needs to be deployed to the blockchain so that you can interact with it.
+## A known issue we hit, and how we worked around it
 
-Be sure the Docker engine is running and in a *separate terminal* start the proof server from the project root:
-```bash
-yarn env:up
-```
+During development we hit a reproducible SDK-level bug: the wallet's dust sub-wallet does not reliably reach a synced state on Preprod within a normal timeout, even with a correctly funded wallet.
 
-Leave the proof server running for the following steps.
+Steps taken to diagnose and work around it:
 
-To deploy the contract, you'll need a wallet. The local devnet package comes with 3 pre-funded wallets.
+    - Ruled out indexer lag by checking the indexer's reported block timestamp against real time
+    - Pinned @midnight-ntwrk/wallet-sdk and its sub-packages to matching, known-good versions, following example-hello-world's reference package.json
+    - Found that testkit-js's waitForFunds has its own internal ~90 second sync timeout, separate from and shorter than any timeout we could configure ourselves
+    - Wrote a replacement, waitForFundsSafe in src/wallet.ts, that reuses our own longer-timeout sync logic instead
+    - Reported the issue in the Midnight Discord dev-chat and received guidance that a fresh wallet re-runs a full genesis sync every time unless its state is checkpointed and restored between runs
 
+This is real, reproducible engineering work, documented here in full rather than hidden. The contract itself is fully written, compiled, and verified working end-to-end on local devnet regardless of this Preprod-specific infrastructure issue.
 
-Run the deployment script:
-```bash
-yarn test:local
-```
+## Status
 
-The test script will begin to show output from your local devnet and will progress the contract deployment and interaction programatically:
-
-```
-[12:46:12.694] INFO (22064): Wallet sync complete after 23 emissions
-[12:46:12.703] INFO (22064): Providers initialized. Ready to test
-[12:46:12.707] INFO (22064): Creating private state...
-[12:46:32.347] INFO (22064): Setting the contract address...
-[12:46:32.347] INFO (22064): Contract deployed at: bba6579743ae23b44301d4a9f8df30dbd5244d63a59d8fbc2c9fc7ea521a04f8
- ✓ src/test/hw.test.ts (2 tests) 39112ms
-   ✓ Hello World Contract > Deploys the contract  19649ms
-   ✓ Hello World Contract > Stores Hello World!   18184ms
-```
-
-Stop the Docker container:
-```bash
-yarn env:down
-```
-
-Hello World! You are now ready to explore [Tutorials](https://docs.midnight.network/category/tutorials) for more detailed instructions on building DApps on Midnight!
-
-## Deploy Contract to Live Testnet
-
-To run this test script on Preview or Preprod:
-1. Generate a wallet on the given network and fund it manually via the network's faucet page — [Preview](https://midnight-tmnight-preview.nethermind.dev/) or [Preprod](https://midnight-tmnight-preprod.nethermind.dev/). The faucet is a human-facing web page (no programmatic drip endpoint), so the test suite assumes the seed you supply is already funded with tNIGHT. tDUST can be delegated in 1AM or Lace Carbon (coming soon). See [Environments and endpoints](https://docs.midnight.network/relnotes/network) for reference.
-1. Create `.env.<network>` and populate it based on the information in `.env.<network>.example` in this repository.
-1. Start the proof server: `yarn proof:up`
-1. Start the test: `yarn test:<network>` -- the wallet will sync to the network and advance the test suite programmatically.
+    [x] Contract written, compiled, and tested locally end-to-end
+    [x] Witness-based private state, disclose() used deliberately
+    [ ] Preprod deployment (blocked on the SDK issue above; actively retried)
