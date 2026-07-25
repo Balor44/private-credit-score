@@ -80,3 +80,11 @@ This is real, reproducible engineering work, documented here in full rather than
 Successful compile output:
 
 ![Compile success](screenshots/compile-success.png)
+
+Local devnet up (proof server, node, indexer healthy):
+
+![Docker environment success](screenshots/docker-env-success.png)
+
+Successful local deployment (both tests passing, contract address visible):
+
+![Local deployment success](screenshots/local-deploy-success.png)
