@@ -6,4 +6,4 @@ deployment.json
 /midnight-level-db
 /.midnight-expert
 .env.preview
-.env.preprod
+.env.preprodpreprod-run.log

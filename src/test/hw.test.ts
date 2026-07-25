@@ -58,6 +58,7 @@ describe('Private Credit Score Contract (' + network + ')', () => {
     };
     wallet = await MidnightWalletProvider.build(logger, envConfig, secret);
     await wallet.start();
+    await syncWallet(logger, wallet.wallet, syncTimeoutMs);
     if (isRemote) {
       const nightBalance = await waitForFundsSafe(logger, wallet.wallet, envConfig, wallet.unshieldedKeystore, syncTimeoutMs);
       logger.info("Wallet NIGHT balance: " + nightBalance);
