@@ -74,3 +74,9 @@ This is real, reproducible engineering work, documented here in full rather than
     [x] Contract written, compiled, and tested locally end-to-end
     [x] Witness-based private state, disclose() used deliberately
     [ ] Preprod deployment (blocked on the SDK issue above; actively retried)
+
+## Screenshots
+
+Successful compile output:
+
+![Compile success](screenshots/compile-success.png)
